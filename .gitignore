@@ -1,0 +1,13 @@
+# Arquivos de ambiente
+.env
+
+# Banco de dados local
+*.db
+*.db-journal*
+
+# Arquivos de log
+*.log
+
+# Diretórios do Python
+__pycache__/
+*.pyc
