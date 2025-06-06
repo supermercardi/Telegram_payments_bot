@@ -21,7 +21,7 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 MERCADOPAGO_ACCESS_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
 
 # Nome do arquivo do banco de dados SQLite.
-DB_NAME = os.getenv("DB_NAME", "/data/flexypay.db")
+DB_NAME = os.getenv("DB_NAME", "flexypay.db")
 
 # Define se o bot está em modo de produção. Afeta logs e avisos.
 # Defina como "true" no seu ambiente de produção.
