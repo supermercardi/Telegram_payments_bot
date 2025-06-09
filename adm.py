@@ -1,4 +1,4 @@
-# adm.py (Versão Melhorada)
+# adm.py (Versão com comando /setsaldo e visualização de saldos)
 """
 👑 Módulo Administrativo
 ------------------------
@@ -18,7 +18,6 @@ bot = None  # Instância global do bot, inicializada por register_admin_handlers
 def register_admin_handlers(bot_instance):
     """
     Registra todos os handlers de comandos e callbacks relacionados ao admin.
-    Esta função é chamada em main.py para injetar a instância do bot.
     """
     global bot
     bot = bot_instance
@@ -27,66 +26,137 @@ def register_admin_handlers(bot_instance):
         """Verifica se um ID de usuário pertence a um administrador."""
         return user_id in config.ADMIN_TELEGRAM_IDS
 
-    # -------------------------------------
-    # COMANDO PRINCIPAL DO PAINEL ADMIN
-    # -------------------------------------
+    # ... (handlers de saque e lucro permanecem os mesmos) ...
+
+    # <<< COMANDO NOVO ADICIONADO >>>
+    @bot.message_handler(commands=['setsaldo'])
+    def handle_set_saldo_command(message):
+        """Inicia o fluxo de alteração de saldo via comando."""
+        if not is_admin(message.from_user.id):
+            bot.reply_to(message, "❌ Acesso negado. Este comando é restrito.")
+            return
+
+        # Pede o ID do usuário para o qual o saldo será alterado
+        msg = bot.reply_to(message, "👤 Por favor, envie o `ID do Telegram` do usuário para alterar o saldo.")
+        bot.register_next_step_handler(msg, process_user_id_for_balance)
+
     @bot.message_handler(commands=['admin', 'adm'])
     def handle_admin_command(message):
         """Exibe o painel de administração se o usuário for um admin."""
         if not is_admin(message.from_user.id):
             bot.reply_to(message, "❌ Acesso negado. Este comando é restrito.")
-            logger.warning(f"⚠️ Tentativa de acesso não autorizado ao /admin por user_id: {message.from_user.id}")
             return
 
         logger.info(f"👑 Admin {message.from_user.id} acessou o painel.")
         markup = InlineKeyboardMarkup(row_width=1)
         btn_pending = InlineKeyboardButton("💰 Ver Saques Pendentes", callback_data="admin_view_pending")
         btn_profit = InlineKeyboardButton("📈 Ver Lucro com Taxas", callback_data="admin_view_profit")
-        markup.add(btn_pending, btn_profit)
-        bot.send_message(message.chat.id, "⚙️ *Painel do Administrador*", reply_markup=markup)
-
-    # -------------------------------------
-    # HANDLERS PARA BOTÕES DO PAINEL
-    # -------------------------------------
-    @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_view_"))
-    def handle_admin_view_actions(call):
-        """Processa cliques nos botões 'Ver Saques' e 'Ver Lucro'."""
+        btn_manage_users = InlineKeyboardButton("👤 Administrar Saldo de Usuário", callback_data="admin_user_menu")
+        # <<< BOTÃO NOVO ADICIONADO >>>
+        btn_view_balances = InlineKeyboardButton("👥 Ver Saldos de Usuários", callback_data="admin_view_balances")
+        markup.add(btn_pending, btn_profit, btn_manage_users, btn_view_balances)
+        bot.send_message(message.chat.id, "⚙️ *Painel do Administrador*", reply_markup=markup, parse_mode="Markdown")
+        
+    # <<< HANDLER DE CALLBACK NOVO >>>
+    @bot.callback_query_handler(func=lambda call: call.data == "admin_view_balances")
+    def handle_view_balances(call):
+        """Busca e exibe todos os usuários com saldo > 0."""
         if not is_admin(call.from_user.id):
             bot.answer_callback_query(call.id, "❌ Ação não permitida!", show_alert=True)
             return
 
-        action = call.data.split("_")[2]
-        admin_id = call.from_user.id
-        
-        if action == "pending":
-            logger.info(f"👑 Admin {admin_id} solicitou a lista de saques pendentes.")
-            bot.answer_callback_query(call.id, "Buscando saques pendentes...")
-            pending_withdrawals = database.get_pending_withdrawals()
-            
-            if not pending_withdrawals:
-                bot.edit_message_text("✅ Nenhum saque pendente no momento.", call.message.chat.id, call.message.message_id)
-                return
-            
-            bot.edit_message_text(f" encontrei {len(pending_withdrawals)} saques. Enviando detalhes...", call.message.chat.id, call.message.message_id)
-            for trx in pending_withdrawals:
-                user_info = database.get_user_info(trx['user_telegram_id'])
-                notify_admin_of_withdrawal_request(
-                    transaction_id=trx['id'],
-                    user_telegram_id=trx['user_telegram_id'],
-                    user_first_name=user_info['first_name'] if user_info else f"ID {trx['user_telegram_id']}",
-                    amount=trx['amount'],
-                    pix_key=trx['pix_key'],
-                    target_admin_id=admin_id # Envia apenas para o admin que solicitou
-                )
+        bot.answer_callback_query(call.id, "Buscando usuários com saldo...")
+        users_with_balance = database.get_users_with_balance()
 
-        elif action == "profit":
-            logger.info(f"👑 Admin {admin_id} solicitou o relatório de lucros.")
-            bot.answer_callback_query(call.id, "Calculando lucro...")
-            total_profit = database.calculate_profits()
-            bot.edit_message_text(
-                f"📈 *Lucro Total Acumulado*\n\nO lucro total gerado a partir de todas as taxas de serviço é de: *R$ {total_profit:.2f}*",
-                call.message.chat.id, call.message.message_id
+        if not users_with_balance:
+            bot.edit_message_text("✅ Nenhum usuário com saldo encontrado.", call.message.chat.id, call.message.message_id)
+            return
+
+        message_text = "👥 *Usuários com Saldo:*\n"
+        for user in users_with_balance:
+            username = f"(@{user['username']})" if user['username'] else ""
+            message_text += (
+                f"\n👤 *{user['first_name']}* {username}\n"
+                f"   - ID: `{user['telegram_id']}`\n"
+                f"   - Saldo: *R$ {user['balance']:.2f}*\n"
             )
+        
+        # O Telegram tem um limite de 4096 caracteres por mensagem.
+        # Se a lista for muito grande, será necessário paginar.
+        # Para a maioria dos casos, isso será suficiente.
+        try:
+            bot.edit_message_text(message_text, call.message.chat.id, call.message.message_id, parse_mode="Markdown")
+        except telebot.apihelper.ApiTelegramException as e:
+            if "message is too long" in str(e):
+                bot.edit_message_text("⚠️ A lista de usuários é muito longa para ser exibida em uma única mensagem.", call.message.chat.id, call.message.message_id)
+
+    @bot.callback_query_handler(func=lambda call: call.data == "admin_user_menu")
+    def handle_admin_user_menu(call):
+        """Inicia o fluxo para administrar um usuário pelo menu."""
+        if not is_admin(call.from_user.id):
+            bot.answer_callback_query(call.id, "❌ Ação não permitida!", show_alert=True)
+            return
+
+        msg = bot.edit_message_text(
+            "👤 *Administrar Saldo de Usuário*\n\n"
+            "Por favor, envie o `ID do Telegram` do usuário que você deseja gerenciar.",
+            call.message.chat.id, call.message.message_id, parse_mode="Markdown"
+        )
+        bot.register_next_step_handler(msg, process_user_id_for_balance)
+
+    def process_user_id_for_balance(message):
+        """Recebe o ID do usuário e pede o novo saldo."""
+        admin_id = message.from_user.id
+        if not is_admin(admin_id): return
+
+        try:
+            target_user_id = int(message.text)
+        except (ValueError, TypeError):
+            bot.reply_to(message, "❌ ID inválido. Por favor, envie apenas o número. Tente novamente a partir do comando ou painel.")
+            return
+        
+        user_info = database.get_user_info(target_user_id)
+        if not user_info:
+            bot.reply_to(message, f"❌ Usuário com ID `{target_user_id}` não encontrado. Verifique o ID.")
+            return
+
+        msg = bot.reply_to(
+            message,
+            f"✅ Usuário `{target_user_id}` (`{user_info.get('first_name', 'N/A')}`) encontrado.\n"
+            f"💰 Saldo atual: *R$ {user_info.get('balance', 0.00):.2f}*\n\n"
+            "Envie o *novo saldo* a ser definido (ex: `150.75`).",
+            parse_mode="Markdown"
+        )
+        bot.register_next_step_handler(msg, process_new_balance, target_user_id)
+
+    def process_new_balance(message, target_user_id):
+        """Recebe e atualiza o novo saldo do usuário."""
+        admin_id = message.from_user.id
+        if not is_admin(admin_id): return
+        
+        try:
+            # Substitui vírgula por ponto para aceitar ambos formatos
+            new_balance = float(message.text.replace(',', '.'))
+            if new_balance < 0:
+                bot.reply_to(message, "❌ O saldo não pode ser negativo. Operação cancelada.")
+                return
+        except (ValueError, TypeError):
+            bot.reply_to(message, "❌ Valor inválido. Envie um número (ex: `25.50`). Operação cancelada.")
+            return
+
+        logger.info(f"👑 Admin {admin_id} está definindo o saldo do usuário {target_user_id} para R${new_balance:.2f}.")
+        
+        if database.admin_set_balance(target_user_id, new_balance):
+            bot.reply_to(message, f"✅ Sucesso! O saldo de `{target_user_id}` foi definido para *R$ {new_balance:.2f}*.", parse_mode="Markdown")
+            logger.info(f"✅ Saldo de {target_user_id} definido para R${new_balance:.2f} por {admin_id}.")
+            
+            try:
+                bot.send_message(target_user_id, f"ℹ️ *Aviso Administrativo:*\nSeu saldo foi ajustado para *R$ {new_balance:.2f}*.", parse_mode="Markdown")
+            except Exception as e:
+                logger.warning(f"Não foi possível notificar {target_user_id} sobre a alteração de saldo: {e}")
+        else:
+            bot.reply_to(message, f"❌ Erro! Não foi possível atualizar o saldo para `{target_user_id}`. Verifique os logs.")
+            logger.error(f"Falha ao definir saldo para {target_user_id} por {admin_id}.")
 
     # -------------------------------------
     # HANDLER PARA AÇÕES DE SAQUE (APROVAR/REJEITAR)

@@ -108,7 +108,7 @@ def handle_menu_callbacks(call):
         handle_suporte(message, from_button=True)
     elif action == "canal":
         handle_canal(message, from_button=True)
-        
+
 # =============================================
 # LÓGICA DOS COMANDOS
 # =============================================
@@ -197,7 +197,7 @@ def handle_pix_deposit(message, from_button=False):
         # Tenta enviar a sua imagem personalizada com o texto do PIX na legenda.
         try:
             # O nome do arquivo deve ser exatamente o que você salvou na pasta do projeto
-            with open('imagem_pix.jpg', 'rb') as foto_fixa:
+            with open('pix.jpg', 'rb') as foto_fixa:
                 bot.send_photo(message.chat.id, photo=foto_fixa, caption=msg_pix_caption)
             
             logger.info(f"✅ PIX de R${valor:.2f} enviado com IMAGEM FIXA para usuário {user.id}.")

@@ -20,8 +20,9 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 # Access Token da sua conta do Mercado Pago para processar pagamentos.
 MERCADOPAGO_ACCESS_TOKEN = os.getenv("MERCADOPAGO_ACCESS_TOKEN")
 
-# Nome do arquivo do banco de dados SQLite.
-DB_NAME = os.getenv("DB_NAME", "flexypay.db")
+# <<< ALTERAÇÃO: De DB_NAME para DATABASE_URL >>>
+# URL de conexão do banco de dados PostgreSQL, fornecida pela Railway.
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Define se o bot está em modo de produção. Afeta logs e avisos.
 # Defina como "true" no seu ambiente de produção.
@@ -85,18 +86,15 @@ HORARIO_SUPORTE = "08:00 às 20:00 (GMT-3)"
 # =============================================
 # 📜 MENSAGENS PADRÃO (COPY)
 # =============================================
-# Atualizado para um tom mais direto e focado em privacidade.
+# (O restante do arquivo permanece igual)
 COPY_INTRO = (
     f"🌐 *Bem-vindo(a) ao {NOME_BOT}: o BOT do PIX SEM RASTRO!*"
 )
-
 MSG_BOAS_VINDAS = (
     "🚀 Faça depósitos, saques e transferências anonimamente, direto pelo Telegram.\n"
     "*Nada de CPF, nada de banco, nada de rastro.*\n\n"
     "💼 Esquece burocracia, esquece regra — aqui você tem *liberdade total* pra movimentar sua grana como quiser."
 )
-
-# A VARIÁVEL QUE ESTAVA FALTANDO
 MSG_DIFERENCIAIS = (
     "\nNossos Diferenciais:\n"
     "✅ *Operações 100% Automatizadas*\n"
@@ -104,7 +102,6 @@ MSG_DIFERENCIAIS = (
     "💸 *Saques Rápidos e Anônimos*\n"
     "👨‍💻 *Suporte Especializado*\n"
 )
-
 MSG_COMANDOS_BASE = (
     "\n\n📋 *Comandos Disponíveis:*\n"
     "`/pix <valor>` - Gerar QR Code para depósito.\n"
@@ -121,6 +118,12 @@ MSG_COMANDOS_BASE = (
 # =============================================
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("FATAL: Token do Telegram não configurado. Defina a variável TELEGRAM_BOT_TOKEN no seu arquivo .env")
+
+# <<< ALTERAÇÃO: Verifica a DATABASE_URL em produção >>>
+if not DATABASE_URL and PRODUCTION:
+    raise ValueError("FATAL: DATABASE_URL não configurada no ambiente de produção.")
+elif not DATABASE_URL:
+    print("AVISO: DATABASE_URL não configurada. O bot não conseguirá se conectar ao banco de dados.")
 
 if not MERCADOPAGO_ACCESS_TOKEN and PRODUCTION:
     print("AVISO: Token do Mercado Pago não configurado. Funcionalidades de pagamento estarão desativadas.")
